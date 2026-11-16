@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeadlineDock</title>
+<style>
+:root{--navy:#14284b;--blue:#2f6fed;--soft:#e8f0fe;--bg:#f4f7fb;--card:#fff;--text:#1d2939;--muted:#667085;--line:#e4e9f1;--red:#c62828;--redbg:#fdecec;--green:#1b7f4b;--greenbg:#e6f6ee;--amber:#9a6200;--amberbg:#fff4de}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;line-height:1.5}
+header{background:var(--navy);color:#fff;padding:22px 20px}
+header h1{margin:0;font-size:1.7rem;letter-spacing:.2px}
+header p{margin:2px 0 0;color:#b9c8e6}
+main{max-width:1150px;margin:0 auto;padding:20px}
+.card{background:var(--card);border-radius:14px;box-shadow:0 1px 4px rgba(20,40,75,.08);padding:18px;margin-bottom:20px}
+h2{margin:0 0 12px;font-size:1.1rem;color:var(--navy)}
+.grid{display:grid;gap:14px}
+.stats{grid-template-columns:repeat(4,1fr)}
+.stat{background:var(--card);border-radius:14px;box-shadow:0 1px 4px rgba(20,40,75,.08);padding:16px;border-left:5px solid var(--blue)}
+.stat b{display:block;font-size:2rem;color:var(--navy);line-height:1.1}
+.stat span{color:var(--muted);font-size:.9rem}
+.stat.pending{border-color:#e0a100}.stat.done{border-color:var(--green)}.stat.over{border-color:var(--red)}
+.two{grid-template-columns:repeat(2,1fr)}
+.three{grid-template-columns:repeat(3,1fr)}
+.bar-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:.93rem}
+.bar-row:last-child{border:0}
+.bar-row strong{background:var(--soft);color:var(--navy);border-radius:999px;padding:0 10px}
+label{display:block;font-size:.85rem;font-weight:600;margin-bottom:4px;color:var(--navy)}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid #cbd5e4;border-radius:8px;font:inherit;background:#fff}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+textarea{resize:vertical;min-height:70px}
+.span2{grid-column:span 2}.span3{grid-column:1/-1}
+button{font:inherit;border:0;border-radius:8px;padding:9px 16px;cursor:pointer;background:var(--blue);color:#fff;font-weight:600}
+button.secondary{background:var(--soft);color:var(--navy)}
+button.danger{background:var(--redbg);color:var(--red)}
+button.small{padding:5px 10px;font-size:.85rem}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+#message{display:none;padding:10px 14px;border-radius:8px;margin-bottom:16px;font-weight:600}
+#message.success{display:block;background:var(--greenbg);color:var(--green)}
+#message.error{display:block;background:var(--redbg);color:var(--red)}
+.filters{grid-template-columns:2fr repeat(4,1fr);margin-bottom:14px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:820px}
+th{text-align:left;background:var(--soft);color:var(--navy);padding:10px;font-size:.85rem}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr.overdue td{background:#fff5f5}
+tr.overdue td:first-child{box-shadow:inset 4px 0 0 var(--red)}
+.badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.8rem;font-weight:600;white-space:nowrap}
+.high,.overdue-tag{background:var(--redbg);color:var(--red)}
+.medium,.in-progress{background:var(--amberbg);color:var(--amber)}
+.low,.pending{background:var(--soft);color:var(--navy)}
+.completed{background:var(--greenbg);color:var(--green)}
+.empty{text-align:center;color:var(--muted);padding:30px 10px;display:none}
+.empty b{display:block;color:var(--navy);font-size:1.05rem}
+.sub{color:var(--muted);font-size:.85rem}
+footer{text-align:center;color:var(--muted);font-size:.85rem;padding:10px 0 30px}
+@media(max-width:850px){.stats{grid-template-columns:repeat(2,1fr)}.two,.three,.filters{grid-template-columns:1fr}.span2{grid-column:auto}}
+</style>
+</head>
+<body>
+<header>
+  <h1>DeadlineDock</h1>
+  <p>Academic Task &amp; Deadline Management System</p>
+</header>
+
+<main>
+  <div id="message" role="status"></div>
+
+  <!-- Dashboard: summary cards (values come from SQL aggregate queries) -->
+  <section class="grid stats" style="margin-bottom:20px">
+    <div class="stat"><b id="statTotal">0</b><span>Total Tasks</span></div>
+    <div class="stat pending"><b id="statPending">0</b><span>Pending Tasks</span></div>
+    <div class="stat done"><b id="statCompleted">0</b><span>Completed Tasks</span></div>
+    <div class="stat over"><b id="statOverdue">0</b><span>Overdue Tasks</span></div>
+  </section>
+
+  <section class="grid three" style="margin-bottom:20px">
+    <div class="card" style="margin:0"><h2>Tasks by Category</h2><div id="categoryList"></div></div>
+    <div class="card" style="margin:0"><h2>Tasks by Course</h2><div id="courseList"></div></div>
+    <div class="card" style="margin:0"><h2>Quick Facts</h2><div id="factsList"></div></div>
+  </section>
+
+  <!-- Add / Edit task form -->
+  <section class="card">
+    <h2 id="formTitle">Add New Task</h2>
+    <form id="taskForm" novalidate>
+      <input type="hidden" id="taskId">
+      <div class="grid two">
+        <div><label for="title">Task Title *</label><input id="title" maxlength="100" placeholder="e.g. SQL Lab Report"></div>
+        <div><label for="courseSelect">Course</label><select id="courseSelect"></select></div>
+        <div class="span2"><label for="description">Description</label><textarea id="description" maxlength="500"></textarea></div>
+      </div>
+      <div class="grid filters" style="grid-template-columns:repeat(4,1fr);margin:14px 0 6px">
+        <div><label for="category">Category *</label>
+          <select id="category"><option>Assignment</option><option>Lab Report</option><option>Quiz</option><option>Exam</option><option>Presentation</option><option>Other</option></select></div>
+        <div><label for="dueDate">Due Date *</label><input type="date" id="dueDate"></div>
+        <div><label for="priority">Priority *</label>
+          <select id="priority"><option>Low</option><option selected>Medium</option><option>High</option></select></div>
+        <div><label for="status">Status *</label>
+          <select id="status"><option>Pending</option><option>In Progress</option><option>Completed</option></select></div>
+      </div>
+      <div class="actions">
+        <button type="submit" id="saveBtn">Add Task</button>
+        <button type="button" id="cancelBtn" class="secondary" style="display:none">Cancel Edit</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Add course form (UNIQUE course_code prevents duplicates) -->
+  <section class="card">
+    <h2>Add Course</h2>
+    <form id="courseForm" novalidate>
+      <div class="grid three">
+        <div><label for="courseCode">Course Code *</label><input id="courseCode" maxlength="20" placeholder="e.g. CSE-401"></div>
+        <div><label for="courseName">Course Name *</label><input id="courseName" maxlength="100"></div>
+        <div><label for="instructor">Instructor</label><input id="instructor" maxlength="60"></div>
+      </div>
+      <div class="actions"><button type="submit" class="secondary">Add Course</button></div>
+    </form>
+  </section>
+
+  <!-- Task table with search and filters -->
+  <section class="card">
+    <h2>All Tasks</h2>
+    <div class="grid filters">
+      <div><label for="searchBox">Search title</label><input id="searchBox" type="search" placeholder="Search tasks..."></div>
+      <div><label for="filterCourse">Course</label><select id="filterCourse"></select></div>
+      <div><label for="filterCategory">Category</label>
+        <select id="filterCategory"><option value="">All</option><option>Assignment</option><option>Lab Report</option><option>Quiz</option><option>Exam</option><option>Presentation</option><option>Other</option></select></div>
+      <div><label for="filterStatus">Status</label>
+        <select id="filterStatus"><option value="">All</option><option>Pending</option><option>In Progress</option><option>Completed</option></select></div>
+      <div><label for="filterPriority">Priority</label>
+        <select id="filterPriority"><option value="">All</option><option>Low</option><option>Medium</option><option>High</option></select></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Task ID</th><th>Title</th><th>Course</th><th>Category</th><th>Due Date</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="taskTableBody"></tbody>
+      </table>
+    </div>
+    <div id="emptyState" class="empty"><b>No tasks found</b>Add a task above or clear the filters to see everything.</div>
+  </section>
+
+  <div class="actions" style="justify-content:center"><button type="button" id="resetBtn" class="danger">Reset Database to Sample Data</button></div>
+</main>
+<footer>DeadlineDock &middot; SQLite running in your browser with sql.js &middot; data saved in this browser only</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<script>
+// ======================================================================
+// DeadlineDock - all application logic (vanilla JavaScript + sql.js)
+// ======================================================================
+
+// Same schema and sample data as database.sql
+const SCHEMA_SQL = `-- DeadlineDock: Academic Task & Deadline Management System
+-- SQLite schema + sample data (this exact script is also embedded in index.html)
+
+-- SQLite does not enforce foreign keys unless this is switched on
+PRAGMA foreign_keys = ON;
+
+-- Parent table (the "one" side of the 1:N relationship)
+CREATE TABLE courses (
+    course_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_code TEXT NOT NULL UNIQUE,   -- UNIQUE prevents duplicate courses
+    course_name TEXT NOT NULL,
+    instructor  TEXT
+);
+
+-- Child table (the "many" side): each task may belong to one course
+CREATE TABLE tasks (
+    task_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    description TEXT,
+    course_id   INTEGER,
+    category    TEXT NOT NULL
+        CHECK (category IN ('Assignment','Lab Report','Quiz','Exam','Presentation','Other')),
+    due_date    TEXT NOT NULL,          -- stored as YYYY-MM-DD
+    priority    TEXT NOT NULL
+        CHECK (priority IN ('Low','Medium','High')),
+    status      TEXT NOT NULL DEFAULT 'Pending'
+        CHECK (status IN ('Pending','In Progress','Completed')),
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (course_id) REFERENCES courses(course_id)
+);
+
+-- Sample courses
+INSERT INTO courses (course_code, course_name, instructor) VALUES
+('CSE-301', 'Database Management Systems', 'Dr. Rahman'),
+('CSE-305', 'Data Structures and Algorithms', 'Ms. Akter'),
+('CSE-311', 'Computer Networks', 'Mr. Hossain'),
+('MAT-201', 'Discrete Mathematics', 'Dr. Chowdhury'),
+('ENG-101', 'Technical Writing', 'Ms. Sultana');
+
+-- Sample tasks (a mix of past and future dates so overdue tracking can be demonstrated)
+INSERT INTO tasks (title, description, course_id, category, due_date, priority, status) VALUES
+('ER Diagram Assignment', 'Draw the ER diagram for a library system.', 1, 'Assignment', '2026-11-05', 'High', 'Pending'),
+('SQL Lab Report 3', 'Report on JOIN and GROUP BY queries.', 1, 'Lab Report', '2026-11-20', 'Medium', 'In Progress'),
+('DBMS Final Project Demo', 'Present the DeadlineDock project.', 1, 'Presentation', '2026-12-05', 'High', 'In Progress'),
+('Sorting Algorithms Quiz', 'Covers merge sort, quick sort and heap sort.', 2, 'Quiz', '2026-11-12', 'Medium', 'Completed'),
+('Binary Tree Assignment', 'Implement BST insert, delete and traversal.', 2, 'Assignment', '2026-11-25', 'High', 'Pending'),
+('Subnetting Lab Report', 'Subnetting exercises from Lab 4.', 3, 'Lab Report', '2026-11-09', 'Low', 'Pending'),
+('Networks Mid-term Exam', 'Chapters 1 to 5.', 3, 'Exam', '2026-12-01', 'High', 'Pending'),
+('Graph Theory Problem Set', 'Problems 1 to 15 from Chapter 6.', 4, 'Assignment', '2026-11-18', 'Medium', 'Completed'),
+('Research Summary Presentation', 'Five-minute talk on a chosen paper.', 5, 'Presentation', '2026-12-10', 'Low', 'Pending'),
+('Reading Reflection', 'One-page reflection on the assigned article.', NULL, 'Other', '2026-11-30', 'Low', 'In Progress');
+`;
+
+const STORAGE_KEY = "deadlinedock_sqlite_db";
+let SQL = null; // the sql.js library
+let db = null;  // the SQLite database
+
+const $ = (id) => document.getElementById(id);
+
+// ---------- Small helpers ----------
+
+// Create an element with safe text (textContent never parses HTML)
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+function slug(text) { return String(text).toLowerCase().replace(/\s+/g, "-"); }
+
+function showMessage(text, type) {
+  const box = $("message");
+  box.textContent = text;
+  box.className = type;
+  clearTimeout(showMessage.timer);
+  showMessage.timer = setTimeout(() => { box.className = ""; }, 4000);
+}
+
+// ---------- Database persistence (localStorage) ----------
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(text) {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+// Export the SQLite database to bytes and store it in localStorage
+function saveDatabase() {
+  try {
+    localStorage.setItem(STORAGE_KEY, bytesToBase64(db.export()));
+  } catch (err) {
+    showMessage("Could not save to browser storage: " + err.message, "error");
+  }
+  // db.export() resets pragmas in sql.js, so turn foreign keys on again
+  db.run("PRAGMA foreign_keys = ON;");
+}
+
+// Open the saved database, or create a new one from database.sql
+function openDatabase() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    try {
+      db = new SQL.Database(base64ToBytes(saved));
+      db.run("PRAGMA foreign_keys = ON;");
+      query("SELECT COUNT(*) AS n FROM tasks"); // quick check that the data is valid
+      return;
+    } catch (err) {
+      console.warn("Saved database was unreadable, creating a new one.", err);
+    }
+  }
+  createFreshDatabase();
+}
+
+function createFreshDatabase() {
+  db = new SQL.Database();
+  db.exec(SCHEMA_SQL); // CREATE TABLE + INSERT sample data
+  db.run("PRAGMA foreign_keys = ON;");
+  saveDatabase();
+}
+
+// ---------- SQL helpers ----------
+
+// Run a SELECT with parameters and return an array of row objects
+function query(sql, params = []) {
+  const stmt = db.prepare(sql);
+  const rows = [];
+  try {
+    stmt.bind(params);
+    while (stmt.step()) rows.push(stmt.getAsObject());
+  } finally {
+    stmt.free();
+  }
+  return rows;
+}
+
+// Run INSERT / UPDATE / DELETE with parameters, then save
+function execute(sql, params = []) {
+  db.run(sql, params);
+  saveDatabase();
+}
+
+// ---------- Dashboard ----------
+
+function loadDashboard() {
+  // COUNT with conditions, AVG and MAX in a single aggregate query.
+  // Overdue = not completed AND due date is before today.
+  const summary = query(`
+    SELECT COUNT(*) AS total,
+           COUNT(CASE WHEN status = 'Pending' THEN 1 END) AS pending,
+           COUNT(CASE WHEN status = 'Completed' THEN 1 END) AS completed,
+           COUNT(CASE WHEN status != 'Completed' AND due_date < date('now','localtime') THEN 1 END) AS overdue,
+           AVG(CASE WHEN status = 'Completed' THEN 100.0 ELSE 0 END) AS completion_rate,
+           MAX(due_date) AS last_due
+    FROM tasks`)[0];
+  $("statTotal").textContent = summary.total;
+  $("statPending").textContent = summary.pending;
+  $("statCompleted").textContent = summary.completed;
+  $("statOverdue").textContent = summary.overdue;
+
+  // Earliest upcoming deadline of unfinished tasks
+  const next = query(`SELECT MIN(due_date) AS next_due FROM tasks
+                      WHERE status != 'Completed' AND due_date >= date('now','localtime')`)[0];
+
+  // GROUP BY category
+  const byCategory = query(`SELECT category AS label, COUNT(*) AS n FROM tasks
+                            GROUP BY category ORDER BY n DESC, category`);
+  // LEFT JOIN + GROUP BY course (courses with 0 tasks still appear)
+  const byCourse = query(`SELECT c.course_code AS label, COUNT(t.task_id) AS n
+                          FROM courses c LEFT JOIN tasks t ON t.course_id = c.course_id
+                          GROUP BY c.course_id ORDER BY n DESC, c.course_code`);
+
+  fillList("categoryList", byCategory);
+  fillList("courseList", byCourse);
+
+  const facts = [
+    { label: "Completion rate", n: Math.round(summary.completion_rate || 0) + "%" },
+    { label: "Next deadline", n: next.next_due || "None" },
+    { label: "Furthest deadline", n: summary.last_due || "None" }
+  ];
+  fillList("factsList", facts);
+}
+
+function fillList(containerId, rows) {
+  const box = $(containerId);
+  box.replaceChildren();
+  if (rows.length === 0) { box.appendChild(el("div", "No data yet", "sub")); return; }
+  rows.forEach((row) => {
+    const line = el("div", null, "bar-row");
+    line.appendChild(el("span", row.label));
+    line.appendChild(el("strong", row.n));
+    box.appendChild(line);
+  });
+}
+
+// ---------- Courses (dropdowns and add form) ----------
+
+function loadCourses() {
+  const courses = query("SELECT course_id, course_code, course_name FROM courses ORDER BY course_code");
+
+  const formSelect = $("courseSelect");
+  const keepForm = formSelect.value;
+  formSelect.replaceChildren(new Option("-- No course --", ""));
+  courses.forEach((c) => formSelect.add(new Option(c.course_code + " - " + c.course_name, c.course_id)));
+  formSelect.value = keepForm;
+
+  const filterSelect = $("filterCourse");
+  const keepFilter = filterSelect.value;
+  filterSelect.replaceChildren(new Option("All", ""));
+  courses.forEach((c) => filterSelect.add(new Option(c.course_code, c.course_id)));
+  filterSelect.value = keepFilter;
+}
+
+function handleCourseSubmit(event) {
+  event.preventDefault();
+  const code = $("courseCode").value.trim();
+  const name = $("courseName").value.trim();
+  const instructor = $("instructor").value.trim();
+
+  if (!code || !name) { showMessage("Course code and course name are required.", "error"); return; }
+
+  // Duplicate check (case-insensitive); the UNIQUE constraint is a second safety net
+  const duplicate = query("SELECT course_id FROM courses WHERE UPPER(course_code) = UPPER(?)", [code]);
+  if (duplicate.length > 0) { showMessage("A course with code " + code + " already exists.", "error"); return; }
+
+  try {
+    execute("INSERT INTO courses (course_code, course_name, instructor) VALUES (?, ?, ?)",
+            [code, name, instructor || null]);
+    $("courseForm").reset();
+    refreshAll();
+    showMessage("Course added successfully.", "success");
+  } catch (err) {
+    showMessage("Could not add course: " + err.message, "error");
+  }
+}
+
+// ---------- Task list (search + filters done with SQL WHERE) ----------
+
+function loadTasks() {
+  const conditions = [];
+  const params = [];
+
+  const search = $("searchBox").value.trim();
+  if (search) { conditions.push("t.title LIKE ?"); params.push("%" + search + "%"); }
+  if ($("filterCourse").value) { conditions.push("t.course_id = ?"); params.push(Number($("filterCourse").value)); }
+  if ($("filterCategory").value) { conditions.push("t.category = ?"); params.push($("filterCategory").value); }
+  if ($("filterStatus").value) { conditions.push("t.status = ?"); params.push($("filterStatus").value); }
+  if ($("filterPriority").value) { conditions.push("t.priority = ?"); params.push($("filterPriority").value); }
+
+  const whereClause = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+
+  // LEFT JOIN so tasks without a course are still listed; sorted by due date
+  const tasks = query(`
+    SELECT t.task_id, t.title, t.category, t.due_date, t.priority, t.status,
+           c.course_code,
+           CASE WHEN t.status != 'Completed' AND t.due_date < date('now','localtime') THEN 1 ELSE 0 END AS is_overdue
+    FROM tasks t
+    LEFT JOIN courses c ON t.course_id = c.course_id
+    ${whereClause}
+    ORDER BY t.due_date ASC, t.task_id ASC`, params);
+
+  const body = $("taskTableBody");
+  body.replaceChildren();
+  $("emptyState").style.display = tasks.length === 0 ? "block" : "none";
+
+  tasks.forEach((task) => {
+    const row = document.createElement("tr");
+    if (task.is_overdue) row.className = "overdue";
+
+    row.appendChild(el("td", task.task_id));
+    row.appendChild(el("td", task.title));
+    row.appendChild(el("td", task.course_code || "-"));
+    row.appendChild(el("td", task.category));
+
+    const dueCell = el("td", task.due_date);
+    if (task.is_overdue) { dueCell.appendChild(document.createElement("br")); dueCell.appendChild(el("span", "Overdue", "badge overdue-tag")); }
+    row.appendChild(dueCell);
+
+    const priorityCell = document.createElement("td");
+    priorityCell.appendChild(el("span", task.priority, "badge " + slug(task.priority)));
+    row.appendChild(priorityCell);
+
+    const statusCell = document.createElement("td");
+    statusCell.appendChild(el("span", task.status, "badge " + slug(task.status)));
+    row.appendChild(statusCell);
+
+    const actionCell = document.createElement("td");
+    const editBtn = el("button", "Edit", "secondary small");
+    editBtn.type = "button";
+    editBtn.addEventListener("click", () => startEdit(task.task_id));
+    const deleteBtn = el("button", "Delete", "danger small");
+    deleteBtn.type = "button";
+    deleteBtn.style.marginLeft = "6px";
+    deleteBtn.addEventListener("click", () => deleteTask(task.task_id, task.title));
+    actionCell.append(editBtn, deleteBtn);
+    row.appendChild(actionCell);
+
+    body.appendChild(row);
+  });
+}
+
+// ---------- Add / edit / delete tasks ----------
+
+function handleTaskSubmit(event) {
+  event.preventDefault();
+
+  const taskId = $("taskId").value;
+  const title = $("title").value.trim();
+  const description = $("description").value.trim();
+  const courseId = $("courseSelect").value ? Number($("courseSelect").value) : null;
+  const category = $("category").value;
+  const dueDate = $("dueDate").value;
+  const priority = $("priority").value;
+  const status = $("status").value;
+
+  // Form validation
+  if (!title) { showMessage("Task title is required.", "error"); return; }
+  if (!dueDate) { showMessage("Please choose a due date.", "error"); return; }
+
+  try {
+    if (taskId) {
+      // UPDATE: task_id is only used in WHERE, so it can never change
+      execute(`UPDATE tasks SET title = ?, description = ?, course_id = ?, category = ?,
+               due_date = ?, priority = ?, status = ? WHERE task_id = ?`,
+              [title, description || null, courseId, category, dueDate, priority, status, Number(taskId)]);
+      showMessage("Task updated successfully.", "success");
+    } else {
+      // INSERT: task_id and created_at are generated by SQLite
+      execute(`INSERT INTO tasks (title, description, course_id, category, due_date, priority, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [title, description || null, courseId, category, dueDate, priority, status]);
+      showMessage("Task added successfully.", "success");
+    }
+    resetTaskForm();
+    refreshAll();
+  } catch (err) {
+    showMessage("Database error: " + err.message, "error");
+  }
+}
+
+// Load one task into the form for editing
+function startEdit(taskId) {
+  const task = query("SELECT * FROM tasks WHERE task_id = ?", [taskId])[0];
+  if (!task) return;
+  $("taskId").value = task.task_id;
+  $("title").value = task.title;
+  $("description").value = task.description || "";
+  $("courseSelect").value = task.course_id === null ? "" : task.course_id;
+  $("category").value = task.category;
+  $("dueDate").value = task.due_date;
+  $("priority").value = task.priority;
+  $("status").value = task.status;
+  $("formTitle").textContent = "Edit Task #" + task.task_id;
+  $("saveBtn").textContent = "Update Task";
+  $("cancelBtn").style.display = "inline-block";
+  $("taskForm").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function resetTaskForm() {
+  $("taskForm").reset();
+  $("taskId").value = "";
+  $("priority").value = "Medium";
+  $("formTitle").textContent = "Add New Task";
+  $("saveBtn").textContent = "Add Task";
+  $("cancelBtn").style.display = "none";
+}
+
+function deleteTask(taskId, title) {
+  if (!confirm('Delete the task "' + title + '"? This cannot be undone.')) return;
+  try {
+    execute("DELETE FROM tasks WHERE task_id = ?", [taskId]);
+    if ($("taskId").value === String(taskId)) resetTaskForm();
+    refreshAll(); // dashboard updates immediately
+    showMessage("Task deleted.", "success");
+  } catch (err) {
+    showMessage("Could not delete task: " + err.message, "error");
+  }
+}
+
+function resetDatabase() {
+  if (!confirm("Reset the database? All your changes will be lost and the sample data restored.")) return;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    db.close();
+    createFreshDatabase();
+    resetTaskForm();
+    ["searchBox", "filterCourse", "filterCategory", "filterStatus", "filterPriority"].forEach((id) => { $(id).value = ""; });
+    refreshAll();
+    showMessage("Database reset to the original sample data.", "success");
+  } catch (err) {
+    showMessage("Reset failed: " + err.message, "error");
+  }
+}
+
+// Refresh every part of the screen from the database
+function refreshAll() {
+  loadCourses();
+  loadDashboard();
+  loadTasks();
+}
+
+// ---------- Start-up ----------
+
+async function startApp() {
+  try {
+    if (typeof initSqlJs !== "function") throw new Error("The sql.js library could not be loaded. Check your internet connection.");
+    SQL = await initSqlJs({
+      locateFile: (file) => "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/" + file
+    });
+    openDatabase();
+
+    $("taskForm").addEventListener("submit", handleTaskSubmit);
+    $("courseForm").addEventListener("submit", handleCourseSubmit);
+    $("cancelBtn").addEventListener("click", resetTaskForm);
+    $("resetBtn").addEventListener("click", resetDatabase);
+    ["searchBox", "filterCourse", "filterCategory", "filterStatus", "filterPriority"].forEach((id) => {
+      $(id).addEventListener(id === "searchBox" ? "input" : "change", loadTasks);
+    });
+
+    refreshAll();
+  } catch (err) {
+    console.error(err);
+    showMessage("Database failed to start: " + err.message, "error");
+    $("message").style.display = "block"; // keep the error visible
+    clearTimeout(showMessage.timer);
+  }
+}
+
+startApp();
+</script>
+</body>
+</html>
